@@ -1,0 +1,39 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: profia-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - profia-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: profia-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/storage/uploads:/app/storage/uploads
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+    networks:
+      - profia-network
+
+volumes:
+  qdrant_storage:
+
+networks:
+  profia-network:
+    driver: bridge

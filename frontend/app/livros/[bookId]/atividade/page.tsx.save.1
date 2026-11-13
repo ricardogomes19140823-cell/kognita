@@ -1,0 +1,259 @@
+'use client';
+
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+type Question = {
+  id: number;
+  question: string;
+  options: string[] | null;
+  correct_answer: string;
+  explanation: string;
+  source_reference: string;
+};
+
+type GradeResult = {
+  question_id: number;
+  is_correct: boolean;
+  score: number;
+  feedback: string;
+};
+
+type Phase = 'form' | 'quiz' | 'result';
+
+export default function AtividadePage() {
+  const params = useParams();
+  const router = useRouter();
+  const bookId = params.bookId as string;
+
+  const [phase, setPhase] = useState<Phase>('form');
+  const [topic, setTopic] = useState('');
+  const [numQuestions, setNumQuestions] = useState(3);
+  const [difficulty, setDifficulty] = useState<'facil' | 'medio' | 'dificil'>('medio');
+  const [qtype, setQtype] = useState<'multipla_escolha' | 'dissertativa'>('multipla_escolha');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [results, setResults] = useState<GradeResult[]>([]);
+  const [totalScore, setTotalScore] = useState(0);
+
+  const generateQuiz = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('http://localhost:8000/quiz/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_id: bookId,
+          topic: topic || 'conteúdo geral do livro',
+          num_questions: numQuestions,
+          difficulty,
+          type: qtype,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Falha ao gerar questões');
+      }
+      const data = await res.json();
+      setQuestions(data.questions);
+      setAnswers({});
+      setCurrentIndex(0);
+      setPhase('quiz');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitAnswers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = questions.map((q) => ({
+        question_id: q.id,
+        question: q.question,
+        student_answer: answers[q.id] || '',
+        correct_answer: q.correct_answer,
+        explanation: q.explanation,
+      }));
+      const res = await fetch('http://localhost:8000/quiz/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: payload }),
+      });
+      if (!res.ok) throw new Error('Falha ao corrigir');
+      const data = await res.json();
+      setResults(data.results);
+      setTotalScore(data.total_score);
+      setPhase('result');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+           <div>
+              <label className="block text-sm font-medium mb-1">Número de questões: {numQuestions}</label>
+              <input
+                type="range" min={1} max={10} value={numQuestions}
+                onChange={(e) => setNumQuestions(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Dificuldade</label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value as any)}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="facil">Fácil</option>
+                <option value="medio">Médio</option>
+                <option value="dificil">Difícil</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Tipo</label>
+              <select
+                value={qtype}
+                onChange={(e) => setQtype(e.target.value as any)}
+                className="w-full border rounded-md px-3 py-2"
+              >
+                <option value="multipla_escolha">Múltipla escolha</option>
+                <option value="dissertativa">Dissertativa</option>
+              </select>
+            </div>
+            {error && <p className="text-red-600 text-sm">{error}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button onClick={generateQuiz} disabled={loading} className="flex-1">
+                {loading ? 'Gerando...' : 'Gerar questões'}
+              </Button>
+              <Button variant="outline" onClick={() => router.push(`/livros/${bookId}`)}>
+                Cancelar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  // --- QUIZ ---
+  if (phase === 'quiz') {
+    const q = questions[currentIndex];
+    const isLast = currentIndex === questions.length - 1;
+    const canAdvance = !!answers[q.id];
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8 bg-slate-50">
+        <Card className="w-full max-w-2xl">
+          <CardHeader>
+            <CardDescription>Questão {currentIndex + 1} de {questions.length}</CardDescription>
+            <CardTitle className="text-lg leading-snug">{q.question}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {q.options ? (
+              q.options.map((opt, i) => (
+                <button
+                  key={i}
+                  onClick={() => setAnswers({ ...answers, [q.id]: opt })}
+                  className={`w-full text-left border rounded-md px-4 py-3 transition-colors ${
+                    answers[q.id] === opt ? 'bg-indigo-100 border-indigo-500' : 'hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="font-semibold mr-2">{String.fromCharCode(65 + i)}.</span> {opt}
+                </button>
+              ))
+            ) : (
+              <textarea
+                value={answers[q.id] || ''}
+                onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
+                placeholder="Escreva sua resposta..."
+                className="w-full border rounded-md px-3 py-2 min-h-[120px]"
+              />
+            )}
+            <div className="flex gap-2 pt-2">
+              {currentIndex > 0 && (
+                <Button variant="outline" onClick={() => setCurrentIndex(currentIndex - 1)}>
+                  ← Anterior
+                </Button>
+              )}
+              {!isLast ? (
+                <Button
+                  className="flex-1"
+                  disabled={!canAdvance}
+                  onClick={() => setCurrentIndex(currentIndex + 1)}
+                >
+                  Próxima →
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  disabled={!canAdvance || loading}
+                  onClick={submitAnswers}
+                >
+                  {loading ? 'Corrigindo...' : 'Finalizar e corrigir'}
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  // --- RESULT ---
+  return (
+    <main className="flex min-h-screen flex-col items-center p-8 bg-slate-50">
+      <div className="w-full max-w-3xl">
+        <Card className="mb-6">
+          <CardHeader className="text-center">
+            <CardTitle className="text-3xl">Resultado</CardTitle>
+            <CardDescription className="text-2xl font-bold text-indigo-600 mt-2">
+              Score: {(totalScore * 100).toFixed(0)}%
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <div className="space-y-4">
+          {questions.map((q, i) => {
+            const r = results.find((x) => x.question_id === q.id);
+            return (
+              <Card key={q.id} className={r?.is_correct ? 'border-green-400' : 'border-red-400'}>
+                <CardHeader>
+                  <CardDescription>Questão {i + 1}</CardDescription>
+                  <CardTitle className="text-base">{q.question}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm space-y-2">
+                  <p>
+                    <span className="font-semibold">Sua resposta:</span> {answers[q.id] || '(em branco)'}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Resposta correta:</span> {q.correct_answer}
+                  </p>
+                  <p className="text-slate-600 italic">{r?.feedback}</p>
+                  <p className="text-xs text-slate-400">Fonte: {q.source_reference}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        <div className="mt-6 flex gap-2">
+          <Button onClick={() => setPhase('form')}>Gerar outra atividade</Button>
+          <Button variant="outline" onClick={() => router.push(`/livros/${bookId}`)}>
+            ← Voltar ao livro
+          </Button>
+        </div>
+      </div>
+    </main>
+  );
+}

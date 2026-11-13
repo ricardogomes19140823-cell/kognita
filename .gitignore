@@ -1,0 +1,14 @@
+.env
+.venv/
+node_modules/
+.next/
+__pycache__/
+qdrant_data/
+hf_model/
+android/
+*.pdf
+*.wav
+profia/
+backend/.env.save
+*.save
+.env*
